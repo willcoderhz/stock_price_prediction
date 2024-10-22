@@ -1,0 +1,60 @@
+name: Django CI/CD Pipeline
+
+# 当 push 到 main 分支时触发
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    # 在 Ubuntu 最新版本上运行
+    runs-on: ubuntu-latest
+
+    steps:
+      # 第一步：检出代码
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # 第二步：设置 Python 环境
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+
+      # 第三步：安装依赖
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 第四步：运行测试
+      - name: Run tests
+        run: python manage.py test
+
+      # 第五步：登录到 DockerHub
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # 第六步：构建并推送 Docker 镜像
+      - name: Build and push Docker image
+        run: |
+          docker build . -t your_dockerhub_username/your_django_app:latest
+          docker push your_dockerhub_username/your_django_app:latest
+
+      # 第七步：通过 SSH 部署到 EC2 实例
+      - name: Deploy to AWS EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ${{ secrets.AWS_EC2_USERNAME }}
+          key: ${{ secrets.AWS_EC2_KEY }}
+          port: 22
+          script: |
+            docker pull your_dockerhub_username/your_django_app:latest
+            docker stop your_django_app_container || true
+            docker rm your_django_app_container || true
+            docker run -d -p 8000:8000 --name your_django_app_container your_dockerhub_username/your_django_app:latest

@@ -1,0 +1,9 @@
+# 忽略本地环境文件
+.env
+
+# 忽略 Pycache 文件夹和其他无关文件
+__pycache__/
+*.py[cod]
+*.pyo
+*.log
+db.sqlite3
