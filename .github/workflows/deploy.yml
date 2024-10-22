@@ -54,4 +54,4 @@ jobs:
           environment_name: Stockpredict-env
           version_label: ${{ github.sha }}
           region: us-east-2
-          file: stockpredict.zip  # Ensure the zip file is specified here
+          deployment_package: stockpredict.zip  # Replace 'file' with 'deployment_package'
