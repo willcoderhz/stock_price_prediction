@@ -82,11 +82,11 @@ WSGI_APPLICATION = 'stock_ai_project.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB'),  # 确保与.env文件中的DB名称一致
-        'USER': os.getenv('POSTGRES_USER'),  # 从.env中读取用户名
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),  # 从.env中读取密码
-        'HOST': os.getenv('POSTGRES_HOST'),  # 从.env中读取RDS主机名 (Endpoint)
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),  # 端口默认为5432
+        'NAME': os.getenv('POSTGRES_DB'),  
+        'USER': os.getenv('POSTGRES_USER'),  
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),  
+        'HOST': os.getenv('POSTGRES_HOST'),  
+        'PORT': os.getenv('POSTGRES_PORT', '5432'),  
     }
 }
 

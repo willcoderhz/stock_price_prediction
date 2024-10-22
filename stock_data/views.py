@@ -20,17 +20,16 @@ from django.db.models import Q
 import os
 from dotenv import load_dotenv
 
-# load .env document
+
 load_dotenv()
 
-# 从环境变量中获取 API 密钥
 API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY')
 
-# 确保 API_KEY 存在
+
 if not API_KEY:
     raise ValueError("API_KEY not found in environment variables.")
 
-def fetch_stock_data(request, symbol='MSFT'):  # 默认符号改为微软 (MSFT)
+def fetch_stock_data(request, symbol='MSFT'):  # (MSFT)
     url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={API_KEY}&outputsize=full'
     response = requests.get(url)
 
@@ -42,13 +41,13 @@ def fetch_stock_data(request, symbol='MSFT'):  # 默认符号改为微软 (MSFT)
     if not data:
         return JsonResponse({'error': 'No data found'}, status=404)
 
-    # 只保留两年内的数据
+    # two years data
     two_years_ago = datetime.now().date() - timedelta(days=2*365)
 
     for date_str, values in data.items():
         date = datetime.strptime(date_str, '%Y-%m-%d').date()
         
-        # 过滤出两年内的数据
+    
         if date < two_years_ago:
             continue
 
@@ -58,7 +57,6 @@ def fetch_stock_data(request, symbol='MSFT'):  # 默认符号改为微软 (MSFT)
         close_price = values['4. close']
         volume = values['5. volume']
 
-        # 创建或更新数据库中的股票记录
         StockPrice.objects.update_or_create(
             symbol=symbol,
             date=date,
@@ -77,135 +75,131 @@ def fetch_stock_data(request, symbol='MSFT'):  # 默认符号改为微软 (MSFT)
 
 
 def backtest_strategy(request, symbol='MSFT'):
-    # 获取用户输入参数，默认初始金额为10000，短期均线20天，长期均线50天
+    # short term 5 days, mid term 30 days
     initial_investment = float(request.GET.get('initial_investment', 10000))
     short_window = int(request.GET.get('short_window', 5))
     long_window = int(request.GET.get('long_window', 30))
 
-    # 获取存储的股票历史数据（按日期升序排序）
+   
     stock_data = StockPrice.objects.filter(symbol=symbol).order_by('date')
 
     if not stock_data.exists():
         return JsonResponse({'error': 'No data found for this symbol'}, status=404)
 
-    # 准备股票收盘价数据
     prices = np.array([float(item.close_price) for item in stock_data])
 
-    # 计算短期均线和长期均线
     short_mavg = np.convolve(prices, np.ones(short_window), 'valid') / short_window
     long_mavg = np.convolve(prices, np.ones(long_window), 'valid') / long_window
 
-    # 确保移动平均数组的长度与价格数组一致
+
     min_length = min(len(short_mavg), len(long_mavg))
 
-    # 截取到相同长度的部分
+
     short_mavg = short_mavg[:min_length]
     long_mavg = long_mavg[:min_length]
-    prices = prices[-min_length:]  # 从后面截取相同长度的价格数据
+    prices = prices[-min_length:]  
 
-    # 设置交易参数
-    holding = False  # 当前是否持有股票
-    portfolio_value = initial_investment  # 初始投资金额
-    shares = 0  # 当前持有股票的数量
-    num_trades = 0  # 交易次数
-    max_drawdown = 0  # 最大回撤
-    peak_portfolio_value = initial_investment  # 投资组合的峰值
 
-    # 模拟买卖操作
+    holding = False  
+    portfolio_value = initial_investment  # inital amount
+    shares = 0  
+    num_trades = 0 
+    max_drawdown = 0  
+    peak_portfolio_value = initial_investment 
+
+    # simulation
     for i in range(min_length):
-        # 确保索引不超出 prices 数组的长度
+        
         if i + long_window - 1 >= len(prices):
             break
 
-        # 如果短期均线高于长期均线且未持有股票，买入
+    
         if short_mavg[i] > long_mavg[i] and not holding:
             shares = portfolio_value / prices[i + long_window - 1]
-            portfolio_value = 0  # 用于全仓买入股票
+            portfolio_value = 0  
             holding = True
             num_trades += 1
-        # 如果短期均线低于长期均线且持有股票，卖出
+        
         elif short_mavg[i] < long_mavg[i] and holding:
             portfolio_value = shares * prices[i + long_window - 1]
             shares = 0
             holding = False
             num_trades += 1
 
-        # 更新组合峰值
+      
         if portfolio_value > peak_portfolio_value:
             peak_portfolio_value = portfolio_value
 
-        # 计算最大回撤
+    
         current_drawdown = (peak_portfolio_value - portfolio_value) / peak_portfolio_value
         if current_drawdown > max_drawdown:
             max_drawdown = current_drawdown
 
-    # 如果最后一天仍然持有股票，按最后一天的价格卖出
+    
     if holding:
         portfolio_value = shares * prices[-1]
 
-    # 计算总回报
+   
     total_return = (portfolio_value - initial_investment) / initial_investment * 100
 
-    # 输出结果
+    # outcome
     return JsonResponse({
         'total_return': total_return,
         'num_trades': num_trades,
-        'max_drawdown': max_drawdown * 100,  # 以百分比形式显示
+        'max_drawdown': max_drawdown * 100,  
         'final_portfolio_value': portfolio_value,
         'message': 'Backtesting completed successfully'
     })
 
 
 def predict_stock_price(request, symbol='MSFT'):
-    # 加载预训练模型
+    # model
     try:
         with open('ml_models/stock_price_model.pkl', 'rb') as file:
             model = pickle.load(file)
     except FileNotFoundError:
         return JsonResponse({'error': 'Model file not found'}, status=500)
 
-    # 删除该股票符号的已有预测数据
+   
     StockPrice.objects.filter(symbol=symbol).update(predicted_close_price=None)
 
-    # 获取存储的股票历史数据（按日期升序排序）
+    # sorted
     stock_data = StockPrice.objects.filter(symbol=symbol).order_by('date')
 
     if not stock_data.exists():
         return JsonResponse({'error': 'No data found for this symbol'}, status=404)
 
-    # 准备股票收盘价数据用于预测，并过滤掉 None 值
+    # last price
     prices = np.array([float(item.close_price) for item in stock_data if item.close_price is not None])  # 转换为 float
 
-    # 检查收盘价是否有有效数据
+    # test
     if len(prices) == 0:
         return JsonResponse({'error': 'No valid closing prices found for this symbol'}, status=500)
 
-    last_day = len(prices)  # 获取最后一天的天数索引
-    last_close_price = prices[-1]  # 获取最后一个有效的收盘价
+    last_day = len(prices)  
+    last_close_price = prices[-1]  
 
-    # 预测未来30天的股票价格（此处基于线性模型的趋势）
-    future_days = np.array([[last_day + i] for i in range(1, 31)])  # 未来30天
+    # 30 days
+    future_days = np.array([[last_day + i] for i in range(1, 31)])  
     predicted_price_deltas = model.predict(future_days)
 
-    # 将预测值基于最后一个实际收盘价进行调整
+
     predicted_prices = last_close_price + (predicted_price_deltas - predicted_price_deltas[0])
 
-    # 获取最后一天的日期，并生成未来30天的日期
     last_date = stock_data.last().date
     if last_date is None:
         return JsonResponse({'error': 'Last date is not available in the stock data'}, status=500)
 
     future_dates = [last_date + timedelta(days=i) for i in range(1, 31)]
 
-    # 将预测的股票价格保存到数据库中
+    # save 
     for date, predicted_price in zip(future_dates, predicted_prices):
         StockPrice.objects.update_or_create(
             symbol=symbol,
             date=date,
-            defaults={'predicted_close_price': float(predicted_price)}  # 保存为 float 类型
+            defaults={'predicted_close_price': float(predicted_price)}  
         )
 
-    # 将预测结果返回为 JSON
     return JsonResponse({
         'predicted_prices': predicted_prices.tolist(),
         'message': 'Stock price prediction completed and saved successfully'
